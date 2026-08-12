@@ -244,8 +244,13 @@ window.checkPass=function(id,encPass){
 };
 async function screenDashboard(teamId){
   app.innerHTML=`<div class="card"><div class="spinner"></div></div>`;
-  const team=await DB.getTeam(teamId);
-  if(!team){app.innerHTML=`<div class="card"><p class="err">Team not found.</p></div>`;return;}
+  let team;
+  try{ team=await DB.getTeam(teamId); }
+  catch(e){ console.error("DASHBOARD LOAD ERROR:",e);
+    app.innerHTML=`<div class="card"><p class="err">Could not load team: ${esc(e.message||e)}</p>
+      <div class="footerbar"><button class="ghost" onclick="location.search=''">← Back to teams</button></div></div>`; return; }
+  if(!team){app.innerHTML=`<div class="card"><p class="err">Team not found.</p>
+      <div class="footerbar"><button class="ghost" onclick="location.search=''">← Back to teams</button></div></div>`;return;}
   const solved=team.solved||[];const base=location.origin+location.pathname;let links="";
   for(let n=1;n<=6;n++){const done=solved.includes(n);
     links+=`<a class="rlink ${done?'done':''}" href="?team=${teamId}&riddle=${n}"><span>🧩 Riddle ${n}</span><span class="st">${done?'✓ solved':'open →'}</span></a>`;}
@@ -270,7 +275,10 @@ window.copyLinks=function(id){
 async function screenRiddle(teamId,n){
   const r=RIDDLES[n];
   if(!r){app.innerHTML=`<div class="card"><p class="err">Unknown riddle.</p></div>`;return;}
-  const team=await DB.getTeam(teamId);
+  let team;
+  try{ team=await DB.getTeam(teamId); }
+  catch(e){ console.error("RIDDLE LOAD ERROR:",e);
+    app.innerHTML=`<div class="card"><p class="err">Could not load team: ${esc(e.message||e)}</p></div>`; return; }
   if(!team){app.innerHTML=`<div class="card"><p class="err">Team not found. Use your team link.</p></div>`;return;}
   const already=(team.solved||[]).includes(n);
   app.innerHTML=`
