@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Moderator — Hostage Escape</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+:root{--gold:#f3c34e;--red:#e2483a;--green:#37c26b;--bg:#0d0f14;--line:#2a2f3b;--muted:#98a0b0}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(1200px 600px at 50% -10%,#1b2030,#0d0f14 60%);
+color:#eef1f6;font-family:"Segoe UI",system-ui,Arial,sans-serif;display:flex;justify-content:center;padding:26px 16px}
+.wrap{max-width:640px;width:100%}
+.card{background:linear-gradient(180deg,#191d27,#12151d);border:1px solid var(--line);border-radius:18px;padding:26px;box-shadow:0 18px 50px rgba(0,0,0,.45)}
+.brand{font-size:13px;letter-spacing:3px;text-transform:uppercase;color:var(--gold)}
+h1{margin:8px 0 18px}
+input{width:100%;padding:14px 16px;font-size:18px;background:#0e1017;color:#eef1f6;border:1px solid var(--line);border-radius:12px;outline:none;text-align:center;letter-spacing:2px}
+input:focus{border-color:var(--gold)}
+button{cursor:pointer;border:none;border-radius:12px;font-weight:700;font-size:15px;padding:12px 18px;background:var(--gold);color:#20180a}
+button.danger{background:var(--red);color:#fff}
+button.ghost{background:transparent;border:1px solid var(--line);color:#eef1f6}
+.err{color:var(--red);min-height:20px;font-size:14px;margin-top:10px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#12151d;border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:10px}
+.prog{font-size:13px;color:var(--muted)}
+.badge{font-size:12px;padding:3px 9px;border-radius:20px;border:1px solid var(--line)}
+.done{color:var(--green);border-color:#22432f}
+.muted{color:var(--muted)}
+.spinner{width:32px;height:32px;border:4px solid var(--line);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite;margin:24px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;left:50%;top:20px;transform:translateX(-50%);background:#12151d;border:1px solid var(--green);color:var(--green);border-radius:12px;padding:10px 16px;font-weight:700;opacity:0;transition:.25s}
+.toast.show{opacity:1;top:30px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card" id="panel"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* Keep these in sync with index.html */
+const CONFIG={
+  MODERATOR_CODE:"RESET-2026",
+  firebase:{  apiKey: "AIzaSyAIZuezO47a8PcSkbhdqQRF9LfJnsP-SVg",
+  authDomain: "hostage-game-dda89.firebaseapp.com",
+  databaseURL: "https://hostage-game-dda89-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "hostage-game-dda89",
+  storageBucket: "hostage-game-dda89.firebasestorage.app",
+  messagingSenderId: "968050038111",
+  appId: "1:968050038111:web:f666ec6810cbc189fe52ea",},
+  TEAMS_COLLECTION:"stickTeams",NAME_FIELD:"name",PASSCODE_FIELD:"passcode",SOLVED_FIELD:"solved",ORDER_FIELD:"order"
+};
+const usingFirebase=!CONFIG.firebase.apiKey.startsWith("YOUR_")&&typeof firebase!=="undefined";
+let fdb=null; if(usingFirebase){firebase.initializeApp(CONFIG.firebase);fdb=firebase.firestore();}
+const mock={all(){return JSON.parse(localStorage.getItem("mockTeams")||"[]")},save(a){localStorage.setItem("mockTeams",JSON.stringify(a))}};
+const DB={
+  async getTeams(){
+    if(usingFirebase){const s=await fdb.collection(CONFIG.TEAMS_COLLECTION).get();
+      let a=s.docs.map(d=>({id:d.id,...d.data()}));a.sort((x,y)=>(x[CONFIG.ORDER_FIELD]||0)-(y[CONFIG.ORDER_FIELD]||0));
+      return a.map(x=>({id:x.id,name:x[CONFIG.NAME_FIELD],solved:x[CONFIG.SOLVED_FIELD]||[]}));}
+    return mock.all().map(t=>({id:t.id,name:t.name,solved:t.solved||[]}));},
+  async resetTeam(id){if(usingFirebase){await fdb.collection(CONFIG.TEAMS_COLLECTION).doc(id).update({[CONFIG.SOLVED_FIELD]:[]});return;}
+    const a=mock.all();const t=a.find(x=>x.id===id);if(t){t.solved=[];mock.save(a);}},
+  async resetAll(){const a=await DB.getTeams();for(const t of a)await DB.resetTeam(t.id);}
+};
+const panel=document.getElementById("panel");
+const toastEl=document.getElementById("toast");
+function toast(m){toastEl.textContent=m;toastEl.className="toast show";setTimeout(()=>toastEl.className="toast",1600);}
+
+function gate(){
+  panel.innerHTML=`<div class="brand">Control Room</div><h1>🎛️ Moderator access</h1>
+   <input id="mc" type="password" placeholder="Moderator code">
+   <div class="err" id="me"></div>
+   <button style="width:100%;margin-top:12px" onclick="tryMod()">Enter</button>`;
+  const i=document.getElementById("mc");i.focus();i.addEventListener("keydown",e=>{if(e.key==="Enter")tryMod();});
+}
+window.tryMod=function(){
+  if(document.getElementById("mc").value.trim()===CONFIG.MODERATOR_CODE){dash();}
+  else document.getElementById("me").textContent="Wrong moderator code.";
+};
+async function dash(){
+  panel.innerHTML=`<div class="brand">Control Room</div><h1>🎛️ Game control</h1>
+    <p class="muted">Reset progress so teams can replay. This clears the <b>${CONFIG.SOLVED_FIELD}</b> array.</p>
+    <button class="danger" style="width:100%" onclick="resetAll()">⚠️ Reset ALL teams</button>
+    <div id="list"><div class="spinner"></div></div>`;
+  const teams=await DB.getTeams();
+  const list=document.getElementById("list");list.innerHTML="";
+  if(!teams.length){list.innerHTML=`<p class="err">No teams found.</p>`;return;}
+  teams.forEach(t=>{
+    const done=(t.solved||[]).length;
+    const row=document.createElement("div");row.className="row";
+    row.innerHTML=`<div><div style="font-weight:700">${t.name}</div>
+      <div class="prog">${done}/6 solved ${done>=6?'<span class="badge done">escaped</span>':''}</div></div>
+      <button class="ghost" data-id="${t.id}">Reset</button>`;
+    row.querySelector("button").onclick=async()=>{await DB.resetTeam(t.id);toast(t.name+" reset");dash();};
+    list.appendChild(row);
+  });
+}
+window.resetAll=async function(){
+  if(!confirm("Reset progress for ALL teams?"))return;
+  await DB.resetAll();toast("All teams reset");dash();
+};
+gate();
+</script>
+</body>
+</html>
