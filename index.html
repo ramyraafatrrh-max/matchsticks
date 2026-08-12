@@ -30,6 +30,8 @@ button.ghost{background:transparent;color:var(--txt);border:1px solid var(--line
 .rlink:hover{border-color:var(--gold)}.rlink .st{font-size:12px;color:var(--muted)}
 .rlink.done{border-color:#22432f;background:#0f1b14}.rlink.done .st{color:var(--green)}
 .hint{background:#12151d;border:1px dashed var(--line);border-radius:12px;padding:14px 16px;color:var(--muted);font-size:14px}
+.videobox{position:relative;width:100%;padding-top:56.25%;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#000;margin:8px 0 4px}
+.videobox iframe,.videobox video{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;object-fit:contain}
 .stage-scaler{width:100%;display:flex;justify-content:center;margin:10px 0 4px}
 .stage{position:relative;transform-origin:top center}
 .stick{position:absolute;border-radius:7px;background:linear-gradient(180deg,#ffd873,#e0a52c);box-shadow:0 2px 5px rgba(0,0,0,.5),inset 0 0 6px rgba(255,255,255,.25);cursor:pointer;transition:filter .12s;}
@@ -68,6 +70,8 @@ a.link{color:var(--gold);text-decoration:none}
 const CONFIG = {
   ACCESS_CODE: "56139",
   MODERATOR_CODE: "RESET-2026",
+  // Intro briefing video — local file hosted next to this page on GitHub.
+  INTRO_VIDEO_URL: "joeharryintro.mp4",
   firebase: {
     apiKey: "AIzaSyAIZuezO47a8PcSkbhdqQRF9LfJnsP-SVg",
     authDomain: "hostage-game-dda89.firebaseapp.com",
@@ -77,11 +81,11 @@ const CONFIG = {
     messagingSenderId: "968050038111",
     appId: "1:968050038111:web:f666ec6810cbc189fe52ea"
   },
-  TEAMS_COLLECTION: "teams",      // real teams live here
-  NAME_FIELD:       "name",       // team display name
-  PASSCODE_FIELD:   "accessCode", // passcode players set (accessCode in your DB)
-  SOLVED_FIELD:     "solved",     // array of solved riddle numbers
-  ORDER_FIELD:      "order"       // optional tab order
+  TEAMS_COLLECTION: "teams",
+  NAME_FIELD:       "name",
+  PASSCODE_FIELD:   "accessCode",
+  SOLVED_FIELD:     "solved",
+  ORDER_FIELD:      "order"
 };
 
 /* ============ 2) DATABASE LAYER ============ */
@@ -89,8 +93,7 @@ const usingFirebase = !CONFIG.firebase.apiKey.startsWith("YOUR_") && typeof fire
 let fdb=null;
 if(usingFirebase){ firebase.initializeApp(CONFIG.firebase); fdb=firebase.firestore(); }
 
-// Guarantee "solved" is always an array of numbers, no matter how it's stored
-// (array, map like {0:1,1:3}, missing, or anything else).
+// Guarantee "solved" is always an array of numbers regardless of how it's stored.
 function normSolved(v){
   if(Array.isArray(v)) return v.map(Number).filter(n=>!isNaN(n));
   if(v && typeof v==="object") return Object.values(v).map(Number).filter(n=>!isNaN(n));
@@ -113,12 +116,11 @@ const DB = {
     if(usingFirebase){
       const snap=await fdb.collection(CONFIG.TEAMS_COLLECTION).get();
       let a=snap.docs.map(d=>({id:d.id,...d.data()}));
-      // only real team docs (must have a name); ignore any config/state docs
       a=a.filter(x=>x[CONFIG.NAME_FIELD]!==undefined && String(x[CONFIG.NAME_FIELD]).trim()!=="");
       a.sort((x,y)=>(x[CONFIG.ORDER_FIELD]||0)-(y[CONFIG.ORDER_FIELD]||0));
       return a.map(x=>({id:x.id,name:x[CONFIG.NAME_FIELD],passcode:String(x[CONFIG.PASSCODE_FIELD]),solved:normSolved(x[CONFIG.SOLVED_FIELD])}));
     }
-    return mock.all().map(x=>({id:x.id,name:x.name,passcode:String(x.accessCode),solved:x.solved||[]}));
+    return mock.all().map(x=>({id:x.id,name:x.name,passcode:String(x.accessCode),solved:normSolved(x.solved)}));
   },
   async getTeam(id){
     if(usingFirebase){
@@ -130,7 +132,6 @@ const DB = {
   },
   async markSolved(id,n){
     if(usingFirebase){
-      // Read current, normalize to array, add n, write back a clean array.
       const ref=fdb.collection(CONFIG.TEAMS_COLLECTION).doc(id);
       const d=await ref.get(); const cur=normSolved(d.exists?d.data()[CONFIG.SOLVED_FIELD]:[]);
       if(!cur.includes(n)) cur.push(n);
@@ -138,7 +139,7 @@ const DB = {
       return;
     }
     const a=mock.all();const t=a.find(x=>x.id===id);
-    if(t){t.solved=t.solved||[];if(!t.solved.includes(n)){t.solved.push(n);mock.save(a);}}
+    if(t){t.solved=normSolved(t.solved);if(!t.solved.includes(n)){t.solved.push(n);mock.save(a);}}
   },
   async resetTeam(id){
     if(usingFirebase){ await fdb.collection(CONFIG.TEAMS_COLLECTION).doc(id).update({[CONFIG.SOLVED_FIELD]:[]}); return; }
@@ -251,9 +252,31 @@ function askPasscode(team){
 window.checkPass=function(id,encPass){
   const real=decodeURIComponent(encPass);
   const v=document.getElementById("pc").value.trim();
-  if(v===real){sessionStorage.setItem("team",id);beep(660,120);go(`?team=${id}`);}
+  if(v===real){sessionStorage.setItem("team",id);beep(660,120);go(`?team=${id}&intro=1`);}
   else{document.getElementById("pe").textContent="Incorrect passcode.";beep(140,220);document.getElementById("pc").value="";}
 };
+
+/* ---- NEW: intro briefing video (shown right after passcode) ---- */
+async function screenIntro(teamId){
+  app.innerHTML=`<div class="card"><div class="spinner"></div></div>`;
+  let team;
+  try{ team=await DB.getTeam(teamId); }catch(e){ team=null; }
+  const name = team? team.name : "Team";
+  app.innerHTML=`
+   <div class="card center">
+     <div class="brand">${esc(name)} • Mission Briefing</div>
+     <h2 style="margin:8px 0 6px">🎬 Watch this before you begin</h2>
+     <p class="muted" style="margin:0 0 12px">Your briefing is playing below. When you're ready, continue to the riddles.</p>
+     <div class="videobox">
+       <video src="${CONFIG.INTRO_VIDEO_URL}" controls autoplay playsinline preload="auto"></video>
+     </div>
+     <div class="footerbar">
+       <button onclick="go('?team=${teamId}')">Continue to riddles ➜</button>
+     </div>
+     <p class="muted small" style="margin-top:10px">Video not loading? Make sure <b>${esc(CONFIG.INTRO_VIDEO_URL)}</b> is uploaded to the same GitHub folder as this page.</p>
+   </div>`;
+}
+
 async function screenDashboard(teamId){
   app.innerHTML=`<div class="card"><div class="spinner"></div></div>`;
   let team;
@@ -272,7 +295,8 @@ async function screenDashboard(teamId){
      <h2 style="margin:8px 0 4px">Your 6 riddles</h2>
      <p class="muted small" style="margin:0 0 16px">Solve all six to escape. Progress is saved automatically. Solved: ${solved.length}/6</p>
      <div class="riddle-links">${links}</div>
-     <div class="hint" style="margin-top:16px">🔗 Each riddle also has its own shareable link:
+     <div class="hint" style="margin-top:16px">🎬 <a class="link" href="?team=${teamId}&intro=1">Re-watch the briefing video</a></div>
+     <div class="hint" style="margin-top:12px">🔗 Each riddle also has its own shareable link:
         <br><span class="small">${esc(base)}?team=${teamId}&riddle=<b>N</b></span>
         <button class="ghost small" style="padding:8px 12px;margin-top:10px" onclick="copyLinks('${teamId}')">Copy all 6 links</button>
      </div>
@@ -336,7 +360,13 @@ function renderOutput(n){
   const st=area.querySelector(".stage");const scale=Math.min(1,(document.querySelector(".card").clientWidth-40)/w*0.55);st.style.transform=`scale(${scale})`;st.parentElement.style.height=(h*scale)+"px";
 }
 /* ============ 6) ROUTER ============ */
-(function route(){const team=qp("team"),riddle=qp("riddle");if(team&&riddle){screenRiddle(team,parseInt(riddle,10));return;}if(team){screenDashboard(team);return;}screenAccess();})();
+(function route(){
+  const team=qp("team"),riddle=qp("riddle"),intro=qp("intro");
+  if(team&&riddle){screenRiddle(team,parseInt(riddle,10));return;}
+  if(team&&intro){screenIntro(team);return;}
+  if(team){screenDashboard(team);return;}
+  screenAccess();
+})();
 </script>
 </body>
 </html>
