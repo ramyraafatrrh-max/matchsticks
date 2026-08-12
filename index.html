@@ -6,6 +6,8 @@
 <title>Hostage Escape — Matchstick Riddles</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<!-- QR code generator (for printable riddle cards) -->
+<script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js"></script>
 <style>
 :root{--gold:#f3c34e;--gold-dim:#5a4a1f;--red:#e2483a;--green:#37c26b;--bg:#0d0f14;--panel:#171a22;--line:#2a2f3b;--txt:#eef1f6;--muted:#98a0b0;}
 *{box-sizing:border-box}html,body{margin:0;height:100%}
@@ -32,7 +34,7 @@ button.ghost{background:transparent;color:var(--txt);border:1px solid var(--line
 .hint{background:#12151d;border:1px dashed var(--line);border-radius:12px;padding:14px 16px;color:var(--muted);font-size:14px}
 .videobox{position:relative;width:100%;padding-top:56.25%;border-radius:14px;overflow:hidden;border:1px solid var(--line);background:#000;margin:8px 0 4px}
 .videobox iframe,.videobox video{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;object-fit:contain}
-.stage-scaler{width:100%;display:flex;justify-content:center;margin:10px 0 4px}
+.stage-scaler{width:100%;display:flex;justify-content:center;margin:8px 0 4px}
 .stage{position:relative;transform-origin:top center}
 .stick{position:absolute;border-radius:7px;background:linear-gradient(180deg,#ffd873,#e0a52c);box-shadow:0 2px 5px rgba(0,0,0,.5),inset 0 0 6px rgba(255,255,255,.25);cursor:pointer;transition:filter .12s;}
 .stick::after{content:"";position:absolute;border-radius:50%;background:#b02f18;}
@@ -58,7 +60,29 @@ button.ghost{background:transparent;color:var(--txt);border:1px solid var(--line
 a.link{color:var(--gold);text-decoration:none}
 .spinner{width:34px;height:34px;border:4px solid var(--line);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite;margin:30px auto}
 @keyframes spin{to{transform:rotate(360deg)}}.small{font-size:13px}
-@media (max-width:560px){.grid2,.riddle-links{grid-template-columns:1fr}.card{padding:20px}}
+/* QR print cards */
+.qrgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px}
+.qrcard{background:#fff;color:#111;border-radius:14px;padding:16px;text-align:center;break-inside:avoid}
+.qrcard h3{margin:0 0 8px;font-size:20px;color:#111}
+.qrcard .qimg{display:flex;justify-content:center}
+.qrcard .qurl{font-size:10px;word-break:break-all;color:#444;margin-top:8px}
+/* compact riddle screen on phones */
+.riddle-compact h2{font-size:18px;margin:6px 0 2px}
+.riddle-compact .instr{font-size:13px;margin:2px 0 4px}
+@media (max-width:560px){
+  .grid2,.riddle-links{grid-template-columns:1fr}.card{padding:18px}
+  .wrap{padding:14px 12px 40px}
+  .riddle-compact{padding:14px}
+  .riddle-compact .footerbar{margin-top:12px}
+}
+@media print{
+  body{background:#fff}
+  .noprint{display:none !important}
+  .wrap{max-width:none;padding:0}
+  .card{box-shadow:none;border:none;background:#fff;color:#111;padding:0}
+  .qrgrid{grid-template-columns:1fr 1fr}
+  .qrcard{border:1px solid #ccc}
+}
 </style>
 </head>
 <body>
@@ -70,8 +94,7 @@ a.link{color:var(--gold);text-decoration:none}
 const CONFIG = {
   ACCESS_CODE: "56139",
   MODERATOR_CODE: "RESET-2026",
-  // Intro briefing video — local file hosted next to this page on GitHub.
-  INTRO_VIDEO_URL: "joeharryintro.mp4",
+  INTRO_VIDEO_URL: "joeharryintro.mp4",   // local file in the same GitHub folder
   firebase: {
     apiKey: "AIzaSyAIZuezO47a8PcSkbhdqQRF9LfJnsP-SVg",
     authDomain: "hostage-game-dda89.firebaseapp.com",
@@ -92,14 +115,11 @@ const CONFIG = {
 const usingFirebase = !CONFIG.firebase.apiKey.startsWith("YOUR_") && typeof firebase !== "undefined";
 let fdb=null;
 if(usingFirebase){ firebase.initializeApp(CONFIG.firebase); fdb=firebase.firestore(); }
-
-// Guarantee "solved" is always an array of numbers regardless of how it's stored.
 function normSolved(v){
   if(Array.isArray(v)) return v.map(Number).filter(n=>!isNaN(n));
   if(v && typeof v==="object") return Object.values(v).map(Number).filter(n=>!isNaN(n));
   return [];
 }
-
 function seedMock(){
   if(localStorage.getItem("mockTeams")) return;
   const t=[{id:"team1",name:"Team Alpha",accessCode:"1111",order:1,solved:[]},
@@ -110,7 +130,6 @@ function seedMock(){
 }
 seedMock();
 const mock={all(){return JSON.parse(localStorage.getItem("mockTeams")||"[]")},save(a){localStorage.setItem("mockTeams",JSON.stringify(a))}};
-
 const DB = {
   async getTeams(){
     if(usingFirebase){
@@ -144,8 +163,7 @@ const DB = {
   async resetTeam(id){
     if(usingFirebase){ await fdb.collection(CONFIG.TEAMS_COLLECTION).doc(id).update({[CONFIG.SOLVED_FIELD]:[]}); return; }
     const a=mock.all();const t=a.find(x=>x.id===id);if(t){t.solved=[];mock.save(a);}
-  },
-  async resetAll(){ const a=await DB.getTeams(); for(const t of a){ await DB.resetTeam(t.id); } }
+  }
 };
 
 /* ============ 3) MATCHSTICK ENGINE ============ */
@@ -194,6 +212,7 @@ function toast(msg,type){toastEl.textContent=msg;toastEl.className="toast show "
 function setEq(a,b){if(a.size!==b.size)return false;for(const k of a)if(!b.has(k))return false;return true;}
 function beep(freq,dur){try{const c=new (window.AudioContext||window.webkitAudioContext)();const o=c.createOscillator();const g=c.createGain();o.frequency.value=freq;o.connect(g);g.connect(c.destination);g.gain.value=.08;o.start();setTimeout(()=>{o.stop();c.close();},dur);}catch(e){}}
 function confettiBurst(){const em=["🎉","✨","💥","⭐","🔓","🎊"];for(let i=0;i<28;i++){const s=document.createElement("div");s.className="confetti";s.textContent=em[i%em.length];s.style.left=Math.random()*100+"vw";s.style.animationDuration=(1.6+Math.random()*1.6)+"s";s.style.fontSize=(16+Math.random()*20)+"px";document.body.appendChild(s);setTimeout(()=>s.remove(),3200);}}
+function riddleUrl(teamId,n){return location.origin+location.pathname+`?team=${teamId}&riddle=${n}`;}
 
 /* ============ 5) SCREENS ============ */
 function screenAccess(){
@@ -256,17 +275,16 @@ window.checkPass=function(id,encPass){
   else{document.getElementById("pe").textContent="Incorrect passcode.";beep(140,220);document.getElementById("pc").value="";}
 };
 
-/* ---- NEW: intro briefing video (shown right after passcode) ---- */
+/* ---- Intro briefing video (button unlocks only when video ends) ---- */
 async function screenIntro(teamId){
   app.innerHTML=`<div class="card"><div class="spinner"></div></div>`;
-  let team;
-  try{ team=await DB.getTeam(teamId); }catch(e){ team=null; }
-  const name = team? team.name : "Team";
+  let team;try{ team=await DB.getTeam(teamId); }catch(e){ team=null; }
+  const name=team?team.name:"Team";
   app.innerHTML=`
    <div class="card center">
      <div class="brand">${esc(name)} • Mission Briefing</div>
      <h2 style="margin:8px 0 6px">🎬 Watch this before you begin</h2>
-     <p class="muted" style="margin:0 0 12px">Your briefing is playing below. When you're ready, continue to the riddles.</p>
+     <p class="muted" style="margin:0 0 12px">Your briefing is playing below. The button unlocks when it finishes.</p>
      <div class="videobox">
        <video id="introVid" src="${CONFIG.INTRO_VIDEO_URL}" controls autoplay playsinline preload="auto"></video>
      </div>
@@ -276,13 +294,11 @@ async function screenIntro(teamId){
      </div>
      <p class="muted small" style="margin-top:10px">Video not loading? Make sure <b>${esc(CONFIG.INTRO_VIDEO_URL)}</b> is uploaded to the same GitHub folder as this page.</p>
    </div>`;
-  // Reveal the "Go to riddles" button only after the video finishes.
   const vid=document.getElementById("introVid");
   const btn=document.getElementById("goRiddles");
   const note=document.getElementById("watchNote");
   if(vid&&btn){
     vid.addEventListener("ended",()=>{ btn.style.display=""; if(note) note.style.display="none"; beep(880,140); });
-    // Fallback: if the video errors or can't load, don't trap the team — reveal after a short delay.
     vid.addEventListener("error",()=>{ btn.style.display=""; if(note) note.textContent="Couldn't load the video — you can continue."; });
   }
 }
@@ -296,7 +312,7 @@ async function screenDashboard(teamId){
       <div class="footerbar"><button class="ghost" onclick="location.search=''">← Back to teams</button></div></div>`; return; }
   if(!team){app.innerHTML=`<div class="card"><p class="err">Team not found.</p>
       <div class="footerbar"><button class="ghost" onclick="location.search=''">← Back to teams</button></div></div>`;return;}
-  const solved=team.solved||[];const base=location.origin+location.pathname;let links="";
+  const solved=team.solved||[];let links="";
   for(let n=1;n<=6;n++){const done=solved.includes(n);
     links+=`<a class="rlink ${done?'done':''}" href="?team=${teamId}&riddle=${n}"><span>🧩 Riddle ${n}</span><span class="st">${done?'✓ solved':'open →'}</span></a>`;}
   app.innerHTML=`
@@ -306,18 +322,49 @@ async function screenDashboard(teamId){
      <p class="muted small" style="margin:0 0 16px">Solve all six to escape. Progress is saved automatically. Solved: ${solved.length}/6</p>
      <div class="riddle-links">${links}</div>
      <div class="hint" style="margin-top:16px">🎬 <a class="link" href="?team=${teamId}&intro=1">Re-watch the briefing video</a></div>
-     <div class="hint" style="margin-top:12px">🔗 Each riddle also has its own shareable link:
-        <br><span class="small">${esc(base)}?team=${teamId}&riddle=<b>N</b></span>
+     <div class="hint" style="margin-top:12px">🔳 <a class="link" href="?team=${teamId}&qr=1">Open printable QR codes for these 6 riddles</a>
         <button class="ghost small" style="padding:8px 12px;margin-top:10px" onclick="copyLinks('${teamId}')">Copy all 6 links</button>
      </div>
      <div class="footerbar"><button class="ghost" onclick="location.search=''">Log out</button></div>
    </div>`;
 }
 window.copyLinks=function(id){
-  const base=location.origin+location.pathname;
-  const txt=[1,2,3,4,5,6].map(n=>`Riddle ${n}: ${base}?team=${id}&riddle=${n}`).join("\n");
+  const txt=[1,2,3,4,5,6].map(n=>`Riddle ${n}: ${riddleUrl(id,n)}`).join("\n");
   navigator.clipboard.writeText(txt).then(()=>toast("6 links copied","good"),()=>toast("Copy failed","bad"));
 };
+
+/* ---- NEW: printable QR codes, one per riddle ---- */
+async function screenQR(teamId){
+  app.innerHTML=`<div class="card"><div class="spinner"></div></div>`;
+  let team;try{ team=await DB.getTeam(teamId); }catch(e){ team=null; }
+  const name=team?team.name:"Team";
+  let cards="";
+  for(let n=1;n<=6;n++){
+    cards+=`<div class="qrcard"><h3>Riddle ${n}</h3><div class="qimg" id="qr${n}"></div>
+            <div class="qurl">${esc(riddleUrl(teamId,n))}</div></div>`;
+  }
+  app.innerHTML=`
+   <div class="card">
+     <div class="brand noprint">${esc(name)} • Printable QR codes</div>
+     <h2 class="noprint" style="margin:8px 0 4px">Scan-to-play riddle codes</h2>
+     <p class="muted small noprint" style="margin:0 0 12px">Print this page, cut out the six cards, and place each near its station. Each QR opens that riddle for <b>${esc(name)}</b>.</p>
+     <div class="qrgrid">${cards}</div>
+     <div class="footerbar noprint">
+       <button onclick="window.print()">🖨️ Print</button>
+       <a class="rlink" style="width:auto" href="?team=${teamId}">← Back to riddles</a>
+     </div>
+   </div>`;
+  // Render QR images (library is global QRCode)
+  if(typeof QRCode==="undefined"){
+    document.querySelector(".qrgrid").insertAdjacentHTML("beforebegin",
+      `<p class="err">QR library didn't load. Check your internet connection and refresh.</p>`);
+    return;
+  }
+  for(let n=1;n<=6;n++){
+    new QRCode(document.getElementById("qr"+n),{text:riddleUrl(teamId,n),width:180,height:180,correctLevel:QRCode.CorrectLevel.M});
+  }
+}
+
 async function screenRiddle(teamId,n){
   const r=RIDDLES[n];
   if(!r){app.innerHTML=`<div class="card"><p class="err">Unknown riddle.</p></div>`;return;}
@@ -328,10 +375,10 @@ async function screenRiddle(teamId,n){
   if(!team){app.innerHTML=`<div class="card"><p class="err">Team not found. Use your team link.</p></div>`;return;}
   const already=(team.solved||[]).includes(n);
   app.innerHTML=`
-   <div class="card center">
+   <div class="card center riddle-compact">
      <div class="brand">${esc(team.name)} • ${r.title}</div>
-     <h2 style="margin:8px 0 2px">Move only ONE stick</h2>
-     <p class="muted" style="margin:4px 0 6px">Tap a matchstick to lift it, then tap an empty slot to place it.</p>
+     <h2>Move only ONE stick</h2>
+     <p class="muted instr">Tap a matchstick to lift it, then tap an empty slot to place it.</p>
      <div id="puzzleArea"></div>
      <div class="footerbar">
        <button class="ghost" onclick="resetPuzzle()">↺ Reset sticks</button>
@@ -353,7 +400,16 @@ function drawPuzzle(){
     stage.appendChild(el);});
   area.innerHTML="";const scaler=document.createElement("div");scaler.className="stage-scaler";scaler.appendChild(stage);area.appendChild(scaler);fitStage(stage,model.width);
 }
-function fitStage(stage,w){const avail=Math.min(document.querySelector(".card").clientWidth-20,860);const scale=Math.min(1,avail/w);stage.style.transform=`scale(${scale})`;stage.parentElement.style.height=(PZ.model.height*scale)+"px";}
+// Fit the puzzle to BOTH width and available height so it never overflows a phone screen.
+function fitStage(stage,w){
+  const card=document.querySelector(".card");
+  const availW=Math.min(card.clientWidth-16,860);
+  const usedAbove=stage.getBoundingClientRect().top; // space consumed by header/instructions
+  const availH=Math.max(120, window.innerHeight - usedAbove - 120); // leave room for buttons
+  const scale=Math.min(1, availW/w, availH/PZ.model.height);
+  stage.style.transform=`scale(${scale})`;
+  stage.parentElement.style.height=(PZ.model.height*scale)+"px";
+}
 window.addEventListener("resize",()=>{const s=document.querySelector(".stage");if(s&&PZ)fitStage(s,PZ.model.width);});
 function pick(key){if(PZ.locked)return;if(PZ.held===key){PZ.current.add(key);PZ.held=null;drawPuzzle();return;}if(PZ.held){toast("You may move only one stick","bad");return;}PZ.current.delete(key);PZ.held=key;drawPuzzle();}
 function place(key){if(PZ.locked||!PZ.held)return;PZ.current.add(key);PZ.held=null;drawPuzzle();evaluate();}
@@ -371,8 +427,9 @@ function renderOutput(n){
 }
 /* ============ 6) ROUTER ============ */
 (function route(){
-  const team=qp("team"),riddle=qp("riddle"),intro=qp("intro");
+  const team=qp("team"),riddle=qp("riddle"),intro=qp("intro"),qr=qp("qr");
   if(team&&riddle){screenRiddle(team,parseInt(riddle,10));return;}
+  if(team&&qr){screenQR(team);return;}
   if(team&&intro){screenIntro(team);return;}
   if(team){screenDashboard(team);return;}
   screenAccess();
