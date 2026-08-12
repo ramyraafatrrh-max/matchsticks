@@ -268,13 +268,23 @@ async function screenIntro(teamId){
      <h2 style="margin:8px 0 6px">🎬 Watch this before you begin</h2>
      <p class="muted" style="margin:0 0 12px">Your briefing is playing below. When you're ready, continue to the riddles.</p>
      <div class="videobox">
-       <video src="${CONFIG.INTRO_VIDEO_URL}" controls autoplay playsinline preload="auto"></video>
+       <video id="introVid" src="${CONFIG.INTRO_VIDEO_URL}" controls autoplay playsinline preload="auto"></video>
      </div>
-     <div class="footerbar">
-       <button onclick="go('?team=${teamId}')">Continue to riddles ➜</button>
+     <div class="footerbar" id="introFooter">
+       <button id="goRiddles" style="display:none" onclick="go('?team=${teamId}')">Go to riddles ➜</button>
+       <p class="muted small" id="watchNote" style="margin:0">🔒 Watch the full briefing to unlock the next step.</p>
      </div>
      <p class="muted small" style="margin-top:10px">Video not loading? Make sure <b>${esc(CONFIG.INTRO_VIDEO_URL)}</b> is uploaded to the same GitHub folder as this page.</p>
    </div>`;
+  // Reveal the "Go to riddles" button only after the video finishes.
+  const vid=document.getElementById("introVid");
+  const btn=document.getElementById("goRiddles");
+  const note=document.getElementById("watchNote");
+  if(vid&&btn){
+    vid.addEventListener("ended",()=>{ btn.style.display=""; if(note) note.style.display="none"; beep(880,140); });
+    // Fallback: if the video errors or can't load, don't trap the team — reveal after a short delay.
+    vid.addEventListener("error",()=>{ btn.style.display=""; if(note) note.textContent="Couldn't load the video — you can continue."; });
+  }
 }
 
 async function screenDashboard(teamId){
