@@ -48,7 +48,7 @@ const CONFIG={
   storageBucket: "hostage-game-dda89.firebasestorage.app",
   messagingSenderId: "968050038111",
   appId: "1:968050038111:web:f666ec6810cbc189fe52ea",},
-  TEAMS_COLLECTION:"stickTeams",NAME_FIELD:"name",PASSCODE_FIELD:"passcode",SOLVED_FIELD:"solved",ORDER_FIELD:"order"
+  TEAMS_COLLECTION:"games",NAME_FIELD:"name",PASSCODE_FIELD:"passcode",SOLVED_FIELD:"solved",ORDER_FIELD:"order"
 };
 const usingFirebase=!CONFIG.firebase.apiKey.startsWith("YOUR_")&&typeof firebase!=="undefined";
 let fdb=null; if(usingFirebase){firebase.initializeApp(CONFIG.firebase);fdb=firebase.firestore();}
