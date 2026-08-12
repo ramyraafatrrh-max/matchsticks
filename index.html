@@ -89,6 +89,14 @@ const usingFirebase = !CONFIG.firebase.apiKey.startsWith("YOUR_") && typeof fire
 let fdb=null;
 if(usingFirebase){ firebase.initializeApp(CONFIG.firebase); fdb=firebase.firestore(); }
 
+// Guarantee "solved" is always an array of numbers, no matter how it's stored
+// (array, map like {0:1,1:3}, missing, or anything else).
+function normSolved(v){
+  if(Array.isArray(v)) return v.map(Number).filter(n=>!isNaN(n));
+  if(v && typeof v==="object") return Object.values(v).map(Number).filter(n=>!isNaN(n));
+  return [];
+}
+
 function seedMock(){
   if(localStorage.getItem("mockTeams")) return;
   const t=[{id:"team1",name:"Team Alpha",accessCode:"1111",order:1,solved:[]},
@@ -108,7 +116,7 @@ const DB = {
       // only real team docs (must have a name); ignore any config/state docs
       a=a.filter(x=>x[CONFIG.NAME_FIELD]!==undefined && String(x[CONFIG.NAME_FIELD]).trim()!=="");
       a.sort((x,y)=>(x[CONFIG.ORDER_FIELD]||0)-(y[CONFIG.ORDER_FIELD]||0));
-      return a.map(x=>({id:x.id,name:x[CONFIG.NAME_FIELD],passcode:String(x[CONFIG.PASSCODE_FIELD]),solved:x[CONFIG.SOLVED_FIELD]||[]}));
+      return a.map(x=>({id:x.id,name:x[CONFIG.NAME_FIELD],passcode:String(x[CONFIG.PASSCODE_FIELD]),solved:normSolved(x[CONFIG.SOLVED_FIELD])}));
     }
     return mock.all().map(x=>({id:x.id,name:x.name,passcode:String(x.accessCode),solved:x.solved||[]}));
   },
@@ -116,13 +124,17 @@ const DB = {
     if(usingFirebase){
       const d=await fdb.collection(CONFIG.TEAMS_COLLECTION).doc(id).get();
       if(!d.exists) return null; const x=d.data();
-      return {id,name:x[CONFIG.NAME_FIELD],passcode:String(x[CONFIG.PASSCODE_FIELD]),solved:x[CONFIG.SOLVED_FIELD]||[]};
+      return {id,name:x[CONFIG.NAME_FIELD],passcode:String(x[CONFIG.PASSCODE_FIELD]),solved:normSolved(x[CONFIG.SOLVED_FIELD])};
     }
-    const t=mock.all().find(t=>t.id===id); return t?{id:t.id,name:t.name,passcode:String(t.accessCode),solved:t.solved||[]}:null;
+    const t=mock.all().find(t=>t.id===id); return t?{id:t.id,name:t.name,passcode:String(t.accessCode),solved:normSolved(t.solved)}:null;
   },
   async markSolved(id,n){
     if(usingFirebase){
-      await fdb.collection(CONFIG.TEAMS_COLLECTION).doc(id).update({[CONFIG.SOLVED_FIELD]:firebase.firestore.FieldValue.arrayUnion(n)});
+      // Read current, normalize to array, add n, write back a clean array.
+      const ref=fdb.collection(CONFIG.TEAMS_COLLECTION).doc(id);
+      const d=await ref.get(); const cur=normSolved(d.exists?d.data()[CONFIG.SOLVED_FIELD]:[]);
+      if(!cur.includes(n)) cur.push(n);
+      await ref.update({[CONFIG.SOLVED_FIELD]:cur});
       return;
     }
     const a=mock.all();const t=a.find(x=>x.id===id);
